@@ -82,30 +82,33 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
                 f"Custom partitions file '{custom_partitions_path}' not found"
             )
 
-        # Parse and validate
+        # Parse and validate using csv.reader
         partition_found = False
         try:
-            with open(partitions_file, "r") as f:
-                # ESP-IDF partition tables don't use CSV headers, so we specify fieldnames manually
-                # Format: Name, Type, SubType, Offset, Size, Flags
-                # Filter out comment lines and empty lines
-                lines = [line for line in f if line.strip() and not line.strip().startswith("#")]
-                reader = csv.DictReader(
-                    lines,
-                    fieldnames=["Name", "Type", "SubType", "Offset", "Size", "Flags"],
-                    skipinitialspace=True
-                )
+            with open(partitions_file, "r", encoding="utf-8") as f:
+                # Read all lines and filter out comments
+                lines = [line for line in f if not line.strip().startswith("#") and line.strip()]
+
+                # Parse using csv.reader
+                reader = csv.reader(lines)
                 for row in reader:
-                    partition_name = row.get("Name", "").strip()
+                    if len(row) < 2:
+                        continue
+
+                    # Extract Name and Type (first two columns)
+                    partition_name = row[0].strip()
+                    partition_type = row[1].strip()
+
                     if partition_name == ota_helper_partition:
                         partition_found = True
                         # Validate it's an app partition
-                        partition_type = row.get("Type", "").strip().lower()
-                        if partition_type != "app":
+                        if partition_type.lower() != "app":
                             raise cv.Invalid(
                                 f"Partition '{ota_helper_partition}' must be of type 'app', got '{partition_type}'"
                             )
                         break
+        except cv.Invalid:
+            raise
         except Exception as e:
             raise cv.Invalid(
                 f"Failed to parse custom partitions file '{custom_partitions_path}': {e}"
