@@ -201,10 +201,8 @@ void ESPHomeOTAComponent::handle_handshake_() {
       // Set target partition if specified
 #ifdef USE_ESP32
       if (!this->target_partition_.empty()) {
-        ota::IDFOTABackend *idf_backend = dynamic_cast<ota::IDFOTABackend *>(this->backend_.get());
-        if (idf_backend) {
-          idf_backend->set_target_partition(this->target_partition_.c_str());
-        }
+        ota::IDFOTABackend *idf_backend = static_cast<ota::IDFOTABackend *>(this->backend_.get());
+        idf_backend->set_target_partition(this->target_partition_.c_str());
       }
 #endif
 
