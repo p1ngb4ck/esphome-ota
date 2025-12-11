@@ -18,28 +18,8 @@ def merge_factory_bin(source, target, env):
     flash_size = env.BoardConfig().get("upload.flash_size", "4MB")
     chip = env.BoardConfig().get("build.mcu", "esp32")
 
-    # Determine firmware offset by checking FLASH_EXTRA_IMAGES addresses
-    # If any image is at or past 0x10000, firmware must use 64KB alignment at 0x20000
-    firmware_offset = "0x10000"  # Default
-
-    flash_images = env.get("FLASH_EXTRA_IMAGES")
-    if flash_images:
-        flat = list(itertools.chain.from_iterable(x if isinstance(x, (list, tuple)) else [x] for x in flash_images))
-        entries = [env.subst(x) for x in flat]
-
-        # Check if any existing image conflicts with default 0x10000 offset
-        for i in range(0, len(entries) - 1, 2):
-            addr = entries[i]
-            try:
-                addr_int = int(addr, 16) if addr.startswith("0x") else int(addr)
-                # If image at/past 0x10000, firmware needs 64KB alignment
-                if addr_int >= 0x10000:
-                    firmware_offset = "0x20000"
-                    break
-            except:
-                pass
-
     sections = []
+    firmware_offset = "0x10000"  # Default
     flasher_args_path = build_dir / "flasher_args.json"
 
     # 1. Try flasher_args.json
@@ -70,6 +50,8 @@ def merge_factory_bin(source, target, env):
                 )
             )
             entries = [env.subst(x) for x in flat]
+
+            # Check what's in FLASH_EXTRA_IMAGES and determine firmware offset
             for i in range(0, len(entries) - 1, 2):
                 addr, fname = entries[i], entries[i + 1]
                 if isinstance(fname, (list, tuple)):
@@ -78,11 +60,33 @@ def merge_factory_bin(source, target, env):
                     )
                     continue
                 file_path = pathlib.Path(str(fname))
+
+                # Skip firmware.bin if it's already in FLASH_EXTRA_IMAGES at wrong offset
+                if file_path.name == firmware_path.name:
+                    # Firmware already in list - check its offset
+                    try:
+                        addr_int = int(addr, 16) if addr.startswith("0x") else int(addr)
+                        if addr_int == 0x10000:
+                            # Wrong offset - skip it, we'll add it with correct offset later
+                            firmware_offset = "0x20000"
+                            continue
+                    except:
+                        pass
+
+                # Check if any other file conflicts with 0x10000
+                try:
+                    addr_int = int(addr, 16) if addr.startswith("0x") else int(addr)
+                    if addr_int >= 0x10000:
+                        firmware_offset = "0x20000"
+                except:
+                    pass
+
                 if file_path.exists():
                     sections.append((addr, file_path))
                 else:
                     print(f"Info: {file_path.name} not found — skipping")
-            # Append main firmware ONLY if using FLASH_EXTRA_IMAGES (not included in it)
+
+            # Add firmware with correct offset
             sections.append((firmware_offset, firmware_path))
 
     # 3. Final fallback: guess standard image locations
