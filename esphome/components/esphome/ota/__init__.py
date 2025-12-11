@@ -88,8 +88,10 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
             with open(partitions_file, "r") as f:
                 # ESP-IDF partition tables don't use CSV headers, so we specify fieldnames manually
                 # Format: Name, Type, SubType, Offset, Size, Flags
+                # Filter out comment lines and empty lines
+                lines = [line for line in f if line.strip() and not line.strip().startswith("#")]
                 reader = csv.DictReader(
-                    filter(lambda row: not row.startswith("#"), f),
+                    lines,
                     fieldnames=["Name", "Type", "SubType", "Offset", "Size", "Flags"],
                     skipinitialspace=True
                 )
