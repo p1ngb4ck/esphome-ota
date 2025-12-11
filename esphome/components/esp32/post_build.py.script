@@ -43,10 +43,16 @@ def merge_factory_bin(source, target, env):
                         partition_type = row[1].strip()
                         partition_offset = row[3].strip()
 
-                        # Find first app partition with explicit offset
-                        if partition_type.lower() == "app" and partition_offset and partition_offset.startswith("0x"):
-                            firmware_offset = partition_offset
-                            print(f"Detected firmware offset from partition CSV: {firmware_offset}")
+                        # Find first app partition
+                        if partition_type.lower() == "app":
+                            if partition_offset and partition_offset.startswith("0x"):
+                                # Explicit offset provided
+                                firmware_offset = partition_offset
+                                print(f"Detected firmware offset from partition CSV: {firmware_offset}")
+                            else:
+                                # Empty offset means ESP-IDF will auto-align to 64KB boundary (0x20000)
+                                firmware_offset = "0x20000"
+                                print(f"Partition CSV has auto-aligned app partition, using offset: {firmware_offset}")
                             break
             except Exception as e:
                 print(f"Warning: Could not parse partition CSV {partition_csv_path}: {e}")
