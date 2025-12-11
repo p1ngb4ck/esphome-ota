@@ -18,6 +18,41 @@ def merge_factory_bin(source, target, env):
     flash_size = env.BoardConfig().get("upload.flash_size", "4MB")
     chip = env.BoardConfig().get("build.mcu", "esp32")
 
+    # Detect firmware offset from partition CSV (0x10000 or 0x20000 depending on alignment)
+    firmware_offset = "0x10000"  # Default
+
+    # Get partition CSV path from PlatformIO board configuration
+    partition_csv_file = env.BoardConfig().get("build.partitions", None)
+    if partition_csv_file:
+        # Resolve relative path from project directory
+        project_dir = pathlib.Path(env.subst("$PROJECT_DIR"))
+        partition_csv_path = project_dir / partition_csv_file
+
+        if partition_csv_path.exists():
+            try:
+                import csv
+                with open(partition_csv_path, "r", encoding="utf-8", newline="") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        # Skip empty rows and comment rows
+                        if not row or not row[0].strip() or row[0].strip().startswith("#"):
+                            continue
+                        if len(row) < 5:
+                            continue
+                        # Row format: Name, Type, SubType, Offset, Size, Flags
+                        partition_type = row[1].strip()
+                        partition_offset = row[3].strip()
+
+                        # Find first app partition with explicit offset
+                        if partition_type.lower() == "app" and partition_offset and partition_offset.startswith("0x"):
+                            firmware_offset = partition_offset
+                            print(f"Detected firmware offset from partition CSV: {firmware_offset}")
+                            break
+            except Exception as e:
+                print(f"Warning: Could not parse partition CSV {partition_csv_path}: {e}")
+        else:
+            print(f"Warning: Partition CSV file not found: {partition_csv_path}")
+
     sections = []
     flasher_args_path = build_dir / "flasher_args.json"
 
@@ -63,7 +98,7 @@ def merge_factory_bin(source, target, env):
                     print(f"Info: {file_path.name} not found — skipping")
         if sections:
             # Append main firmware to sections
-            sections.append(("0x10000", firmware_path))
+            sections.append((firmware_offset, firmware_path))
 
     # 3. Final fallback: guess standard image locations
     if not sections:
@@ -72,7 +107,7 @@ def merge_factory_bin(source, target, env):
             ("0x0", build_dir / "bootloader" / "bootloader.bin"),
             ("0x8000", build_dir / "partition_table" / "partition-table.bin"),
             ("0xe000", build_dir / "ota_data_initial.bin"),
-            ("0x10000", firmware_path),
+            (firmware_offset, firmware_path),
         ]
         for addr, file_path in guesses:
             if file_path.exists():
