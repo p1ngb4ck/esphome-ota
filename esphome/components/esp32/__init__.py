@@ -949,6 +949,13 @@ async def to_code(config):
         Path(__file__).parent / "post_build.py.script",
     )
 
+    # Add OTA helper build script (runs when USE_OTA_HELPER_PARTITION is defined)
+    add_extra_script(
+        "post",
+        "build_ota_helper.py",
+        Path(__file__).parent / "build_ota_helper.py.script",
+    )
+
     # In testing mode, add IRAM fix script to allow linking grouped component tests
     # Similar to ESP8266's approach but for ESP-IDF
     if CORE.testing_mode:
@@ -1132,6 +1139,11 @@ async def to_code(config):
         add_extra_build_file(
             "partitions.csv", CORE.relative_config_path(config[CONF_PARTITIONS])
         )
+    else:
+        # Check if OTA auto-generated partitions.csv in config directory
+        auto_partitions = Path(CORE.config_dir) / "partitions.csv"
+        if auto_partitions.exists():
+            add_extra_build_file("partitions.csv", auto_partitions)
 
     if assertion_level := advanced.get(CONF_ASSERTION_LEVEL):
         for key, flag in ASSERTION_LEVELS.items():

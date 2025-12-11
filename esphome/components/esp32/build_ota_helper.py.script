@@ -1,0 +1,161 @@
+Import("env")  # noqa: F821
+
+import json  # noqa: E402
+import os  # noqa: E402
+import pathlib  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+
+def build_ota_helper(source, target, env):
+    """
+    Build OTA helper firmware if USE_OTA_HELPER_PARTITION is defined.
+    This creates a minimal firmware for the OTA helper partition.
+    """
+    # Check if OTA helper partition is enabled
+    if "USE_OTA_HELPER_PARTITION" not in env.get("CPPDEFINES", {}):
+        return
+
+    build_dir = pathlib.Path(env.subst("$BUILD_DIR"))
+    project_dir = pathlib.Path(env.subst("$PROJECT_DIR"))
+
+    # Get partition name from define
+    partition_name = None
+    for define in env.get("CPPDEFINES", []):
+        if isinstance(define, (list, tuple)) and define[0] == "USE_OTA_HELPER_PARTITION":
+            partition_name = define[1].strip('"')
+            break
+
+    if not partition_name:
+        print("Warning: USE_OTA_HELPER_PARTITION defined but no partition name found")
+        return
+
+    print(f"\n{'='*80}")
+    print(f"Building OTA helper firmware for partition: {partition_name}")
+    print(f"{'='*80}\n")
+
+    # Create OTA helper YAML configuration
+    ota_helper_yaml = project_dir / f"ota-helper-{partition_name}.yaml"
+
+    # Read main config to extract necessary settings
+    main_yaml = None
+    for possible_name in [f"{env.subst('$PIOENV')}.yaml", "config.yaml"]:
+        candidate = project_dir / possible_name
+        if candidate.exists():
+            main_yaml = candidate
+            break
+
+    if not main_yaml:
+        print("Warning: Could not find main YAML config")
+        return
+
+    # Generate minimal OTA helper YAML
+    ota_helper_content = f"""# Auto-generated OTA helper configuration
+# DO NOT EDIT - this file is regenerated on each build
+
+esphome:
+  name: {env.subst('$PIOENV')}-ota-helper
+  friendly_name: "{env.subst('$PIOENV')} OTA Helper"
+
+esp32:
+  board: {env.BoardConfig().get("build.mcu", "esp32")}
+  framework:
+    type: esp-idf
+
+# Minimal components for OTA functionality
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+logger:
+  level: INFO
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+    mode: psram
+    target_partition: "main"
+
+# PSRAM required for buffering firmware
+psram:
+  mode: octal
+  speed: 80MHz
+"""
+
+    # Write OTA helper YAML
+    with open(ota_helper_yaml, "w") as f:
+        f.write(ota_helper_content)
+
+    print(f"Created OTA helper config: {ota_helper_yaml}")
+
+    # Build the OTA helper firmware using ESPHome CLI
+    python_exe = sys.executable
+    esphome_cmd = [
+        python_exe,
+        "-m", "esphome",
+        "compile",
+        str(ota_helper_yaml)
+    ]
+
+    print(f"Building OTA helper firmware...")
+    print(f"Command: {' '.join(esphome_cmd)}")
+
+    try:
+        result = subprocess.run(
+            esphome_cmd,
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print(f"\n{'='*80}")
+            print(f"OTA helper firmware built successfully!")
+
+            # Find the built binary
+            ota_helper_build = project_dir / f".esphome/build/{env.subst('$PIOENV')}-ota-helper"
+            firmware_bin = ota_helper_build / ".pioenvs" / f"{env.subst('$PIOENV')}-ota-helper" / "firmware.bin"
+
+            if firmware_bin.exists():
+                # Copy to main build directory for easy access
+                output_bin = build_dir / f"ota-helper-{partition_name}.bin"
+                import shutil
+                shutil.copy(firmware_bin, output_bin)
+                print(f"OTA helper binary: {output_bin}")
+                print(f"Size: {firmware_bin.stat().st_size} bytes")
+
+                # Ensure partition table is in build directory for upload detection
+                partition_csv_src = project_dir / "partitions.csv"
+                partition_csv_dst = build_dir / "partitions.csv"
+                if partition_csv_src.exists() and not partition_csv_dst.exists():
+                    shutil.copy(partition_csv_src, partition_csv_dst)
+
+                # Store path for upload command
+                env["OTA_HELPER_BIN"] = str(output_bin)
+                env["OTA_HELPER_PARTITION"] = partition_name
+
+                print(f"\nTo flash initial dual-partition setup:")
+                print(f"  esphome upload {main_yaml.name} --device /dev/ttyUSB0 \\")
+                print(f"    --ota-helper-bin {output_bin} \\")
+                print(f"    --ota-helper-offset 0xYOUR_OFFSET")
+            else:
+                print(f"Warning: Built firmware not found at {firmware_bin}")
+
+            print(f"{'='*80}\n")
+        else:
+            print(f"\nError building OTA helper firmware:")
+            print(result.stdout)
+            print(result.stderr)
+            print("\nContinuing with main firmware build...")
+
+    except Exception as e:
+        print(f"Error building OTA helper firmware: {e}")
+        print("Continuing with main firmware build...")
+
+
+# Add post-build action to build OTA helper
+env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", build_ota_helper)  # noqa: F821

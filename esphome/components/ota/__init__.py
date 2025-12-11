@@ -4,6 +4,7 @@ from esphome.config_helpers import filter_source_files_from_platform
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ESPHOME,
+    CONF_ID,
     CONF_ON_ERROR,
     CONF_OTA,
     CONF_PLATFORM,
@@ -23,6 +24,7 @@ CONF_ON_BEGIN = "on_begin"
 CONF_ON_END = "on_end"
 CONF_ON_PROGRESS = "on_progress"
 CONF_ON_STATE_CHANGE = "on_state_change"
+CONF_PARTITION = "partition"
 
 
 ota_ns = cg.esphome_ns.namespace("ota")
@@ -35,6 +37,9 @@ OTAProgressTrigger = ota_ns.class_("OTAProgressTrigger", automation.Trigger.temp
 OTAStartTrigger = ota_ns.class_("OTAStartTrigger", automation.Trigger.template())
 OTAStateChangeTrigger = ota_ns.class_(
     "OTAStateChangeTrigger", automation.Trigger.template()
+)
+SwitchPartitionAndRebootAction = ota_ns.class_(
+    "SwitchPartitionAndRebootAction", automation.Action
 )
 
 
@@ -137,3 +142,15 @@ FILTER_SOURCE_FILES = filter_source_files_from_platform(
         },
     }
 )
+
+
+@automation.register_action(
+    "ota.switch_partition_and_reboot",
+    SwitchPartitionAndRebootAction,
+    cv.Schema({cv.Required(CONF_PARTITION): cv.templatable(cv.string)}),
+)
+async def switch_partition_action_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg)
+    template_ = await cg.templatable(config[CONF_PARTITION], args, cg.std_string)
+    cg.add(var.set_partition_label(template_))
+    return var

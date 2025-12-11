@@ -27,6 +27,7 @@ RESPONSE_RECEIVE_OK = 0x44
 RESPONSE_UPDATE_END_OK = 0x45
 RESPONSE_SUPPORTS_COMPRESSION = 0x46
 RESPONSE_CHUNK_OK = 0x47
+RESPONSE_PARTITION_REBOOT_OK = 0x48
 
 RESPONSE_ERROR_MAGIC = 0x80
 RESPONSE_ERROR_UPDATE_PREPARE = 0x81
@@ -49,6 +50,7 @@ MAGIC_BYTES = [0x6C, 0x26, 0xF7, 0x5C, 0x45]
 
 FEATURE_SUPPORTS_COMPRESSION = 0x01
 FEATURE_SUPPORTS_SHA256_AUTH = 0x02
+FEATURE_SUPPORTS_PARTITION_REBOOT = 0x04
 
 
 UPLOAD_BLOCK_SIZE = 8192
@@ -242,7 +244,11 @@ def send_check(
 
 
 def perform_ota(
-    sock: socket.socket, password: str | None, file_handle: io.IOBase, filename: Path
+    sock: socket.socket,
+    password: str | None,
+    file_handle: io.IOBase,
+    filename: Path,
+    enable_partition_reboot: bool = False,
 ) -> None:
     file_contents = file_handle.read()
     file_size = len(file_contents)
@@ -262,6 +268,9 @@ def perform_ota(
 
     # Features - send both compression and SHA256 auth support
     features_to_send = FEATURE_SUPPORTS_COMPRESSION | FEATURE_SUPPORTS_SHA256_AUTH
+    if enable_partition_reboot:
+        features_to_send |= FEATURE_SUPPORTS_PARTITION_REBOOT
+        _LOGGER.info("Requesting partition reboot before OTA")
     send_check(sock, features_to_send, "features")
     features = receive_exactly(
         sock,
@@ -321,6 +330,17 @@ def perform_ota(
     if auth != RESPONSE_AUTH_OK:
         hash_func, nonce_size, hash_name = _AUTH_METHODS[auth]
         perform_auth(sock, password, hash_func, nonce_size, hash_name)
+
+    # Check if device will reboot to OTA helper partition
+    if enable_partition_reboot:
+        _LOGGER.info("Waiting for device to acknowledge partition reboot...")
+        reboot_response = receive_exactly(
+            sock, 1, "partition reboot", RESPONSE_PARTITION_REBOOT_OK
+        )
+        _LOGGER.info("Device is rebooting to OTA helper partition...")
+        # Device will close connection and reboot
+        # We don't continue - this is just the trigger phase
+        return
 
     # Set higher timeout during upload
     sock.settimeout(30.0)
@@ -385,7 +405,11 @@ def perform_ota(
 
 
 def run_ota_impl_(
-    remote_host: str | list[str], remote_port: int, password: str | None, filename: Path
+    remote_host: str | list[str],
+    remote_port: int,
+    password: str | None,
+    filename: Path,
+    enable_partition_reboot: bool = False,
 ) -> tuple[int, str | None]:
     from esphome.core import CORE
 
@@ -421,12 +445,45 @@ def run_ota_impl_(
         _LOGGER.info("Connected to %s", sa[0])
         with open(filename, "rb") as file_handle:
             try:
-                perform_ota(sock, password, file_handle, filename)
+                perform_ota(
+                    sock, password, file_handle, filename, enable_partition_reboot
+                )
             except OTAError as err:
                 _LOGGER.error(str(err))
                 return 1, None
             finally:
                 sock.close()
+
+        # If partition reboot was requested, we need to reconnect and do actual OTA
+        if enable_partition_reboot:
+            _LOGGER.info(
+                "Waiting for device to boot into OTA helper partition (10 seconds)..."
+            )
+            time.sleep(10)
+
+            # Reconnect and perform actual OTA upload (without partition reboot flag)
+            _LOGGER.info("Reconnecting to perform actual firmware upload...")
+            sock = socket.socket(af, socktype)
+            sock.settimeout(20.0)
+            try:
+                sock.connect(sa)
+            except OSError as err:
+                sock.close()
+                _LOGGER.error(
+                    "Reconnecting to %s port %s failed: %s", sa[0], sa[1], err
+                )
+                return 1, None
+
+            _LOGGER.info("Reconnected to %s", sa[0])
+            with open(filename, "rb") as file_handle:
+                try:
+                    # Second connection: normal OTA upload (no partition reboot)
+                    perform_ota(sock, password, file_handle, filename, False)
+                except OTAError as err:
+                    _LOGGER.error(str(err))
+                    return 1, None
+                finally:
+                    sock.close()
 
         # Successfully uploaded to sa[0]
         return 0, sa[0]
@@ -436,10 +493,16 @@ def run_ota_impl_(
 
 
 def run_ota(
-    remote_host: str | list[str], remote_port: int, password: str | None, filename: Path
+    remote_host: str | list[str],
+    remote_port: int,
+    password: str | None,
+    filename: Path,
+    enable_partition_reboot: bool = False,
 ) -> tuple[int, str | None]:
     try:
-        return run_ota_impl_(remote_host, remote_port, password, filename)
+        return run_ota_impl_(
+            remote_host, remote_port, password, filename, enable_partition_reboot
+        )
     except OTAError as err:
         _LOGGER.error(err)
         return 1, None

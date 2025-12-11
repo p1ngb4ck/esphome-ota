@@ -115,6 +115,9 @@ static const uint8_t FEATURE_SUPPORTS_COMPRESSION = 0x01;
 #ifdef USE_OTA_SHA256
 static const uint8_t FEATURE_SUPPORTS_SHA256_AUTH = 0x02;
 #endif
+#ifdef USE_ESP32
+static const uint8_t FEATURE_SUPPORTS_PARTITION_REBOOT = 0x04;
+#endif
 
 // Temporary flag to allow MD5 downgrade for ~3 versions (until 2026.1.0)
 // This allows users to downgrade via OTA if they encounter issues after updating.
@@ -194,6 +197,17 @@ void ESPHomeOTAComponent::handle_handshake_() {
       }
       // All bytes sent, create backend and move to next state
       this->backend_ = ota::make_ota_backend();
+
+      // Set target partition if specified
+#ifdef USE_ESP32
+      if (!this->target_partition_.empty()) {
+        ota::IDFOTABackend *idf_backend = dynamic_cast<ota::IDFOTABackend *>(this->backend_.get());
+        if (idf_backend) {
+          idf_backend->set_target_partition(this->target_partition_.c_str());
+        }
+      }
+#endif
+
       this->transition_ota_state_(OTAState::FEATURE_READ);
       [[fallthrough]];
     }
@@ -246,12 +260,98 @@ void ESPHomeOTAComponent::handle_handshake_() {
       if (!this->handle_auth_read_()) {
         return;
       }
+#ifdef USE_ESP32
+      // After successful auth, check if client requests partition reboot
+      if ((this->ota_features_ & FEATURE_SUPPORTS_PARTITION_REBOOT) != 0) {
+        // Client requests reboot to OTA helper partition
+        if (this->ota_helper_partition_.empty()) {
+          ESP_LOGW(TAG, "Client requested partition reboot but no OTA helper configured");
+          this->send_error_and_cleanup_(ota::OTA_RESPONSE_ERROR_UNKNOWN);
+          return;
+        }
+
+        // Send acknowledgment
+        this->handshake_buf_[0] = ota::OTA_RESPONSE_PARTITION_REBOOT_OK;
+        if (!this->writeall_(this->handshake_buf_, 1)) {
+          this->log_socket_error_(LOG_STR("ack partition"));
+          this->cleanup_connection_();
+          return;
+        }
+
+        // Perform partition switch and reboot
+        const esp_partition_t *partition = esp_partition_find_first(
+            ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, this->ota_helper_partition_.c_str());
+
+        if (!partition) {
+          ESP_LOGE(TAG, "OTA helper partition '%s' not found", this->ota_helper_partition_.c_str());
+          this->cleanup_connection_();
+          return;
+        }
+
+        esp_err_t err = esp_ota_set_boot_partition(partition);
+        if (err != ESP_OK) {
+          ESP_LOGE(TAG, "Failed to set boot partition '%s': %d", this->ota_helper_partition_.c_str(), err);
+          this->cleanup_connection_();
+          return;
+        }
+
+        this->cleanup_connection_();
+        ESP_LOGI(TAG, "Rebooting to OTA helper partition: %s", this->ota_helper_partition_.c_str());
+        delay(100);  // Give log time to flush
+        esp_restart();
+        // Never reached
+        return;
+      }
+#endif
       this->transition_ota_state_(OTAState::DATA);
       [[fallthrough]];
     }
 #endif
 
     case OTAState::DATA:
+#ifdef USE_ESP32
+      // Check partition reboot for non-password case (after FEATURE_ACK)
+      if ((this->ota_features_ & FEATURE_SUPPORTS_PARTITION_REBOOT) != 0) {
+        // Client requests reboot to OTA helper partition
+        if (this->ota_helper_partition_.empty()) {
+          ESP_LOGW(TAG, "Client requested partition reboot but no OTA helper configured");
+          this->send_error_and_cleanup_(ota::OTA_RESPONSE_ERROR_UNKNOWN);
+          return;
+        }
+
+        // Send acknowledgment
+        this->handshake_buf_[0] = ota::OTA_RESPONSE_PARTITION_REBOOT_OK;
+        if (!this->writeall_(this->handshake_buf_, 1)) {
+          this->log_socket_error_(LOG_STR("ack partition"));
+          this->cleanup_connection_();
+          return;
+        }
+
+        // Perform partition switch and reboot
+        const esp_partition_t *partition = esp_partition_find_first(
+            ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, this->ota_helper_partition_.c_str());
+
+        if (!partition) {
+          ESP_LOGE(TAG, "OTA helper partition '%s' not found", this->ota_helper_partition_.c_str());
+          this->cleanup_connection_();
+          return;
+        }
+
+        esp_err_t err = esp_ota_set_boot_partition(partition);
+        if (err != ESP_OK) {
+          ESP_LOGE(TAG, "Failed to set boot partition '%s': %d", this->ota_helper_partition_.c_str(), err);
+          this->cleanup_connection_();
+          return;
+        }
+
+        this->cleanup_connection_();
+        ESP_LOGI(TAG, "Rebooting to OTA helper partition: %s", this->ota_helper_partition_.c_str());
+        delay(100);  // Give log time to flush
+        esp_restart();
+        // Never reached
+        return;
+      }
+#endif
       this->handle_data_();
       return;
 

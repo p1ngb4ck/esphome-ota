@@ -33,6 +33,12 @@ class ESPHomeOTAComponent : public ota::OTAComponent {
   /// Manually set the port OTA should listen on
   void set_port(uint16_t port);
 
+  /// Set target partition for OTA updates (PSRAM mode)
+  void set_target_partition(const std::string &label) { this->target_partition_ = label; }
+
+  /// Set OTA helper partition name for partition reboot feature
+  void set_ota_helper_partition(const std::string &label) { this->ota_helper_partition_ = label; }
+
   void setup() override;
   void dump_config() override;
   float get_setup_priority() const override;
@@ -88,6 +94,8 @@ class ESPHomeOTAComponent : public ota::OTAComponent {
 
   uint32_t client_connect_time_{0};
   uint16_t port_;
+  std::string target_partition_;
+  std::string ota_helper_partition_;
   uint8_t handshake_buf_[5];
   OTAState ota_state_{OTAState::IDLE};
   uint8_t handshake_buf_pos_{0};

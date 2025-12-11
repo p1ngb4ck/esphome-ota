@@ -523,7 +523,12 @@ def compile_program(args: ArgsProtocol, config: ConfigType) -> int:
 
 
 def upload_using_esptool(
-    config: ConfigType, port: str, file: str, speed: int
+    config: ConfigType,
+    port: str,
+    file: str,
+    speed: int,
+    ota_helper_bin: str | None = None,
+    ota_helper_offset: str | None = None,
 ) -> str | int:
     from esphome import platformio_api
 
@@ -543,6 +548,55 @@ def upload_using_esptool(
             ),
             *idedata.extra_flash_images,
         ]
+
+    # Auto-detect OTA helper partition binary if not manually specified
+    if ota_helper_bin is None and ota_helper_offset is None:
+        # Check if OTA helper partition is configured in YAML
+        ota_conf = {}
+        for ota_item in config.get(CONF_OTA, []):
+            if ota_item.get(CONF_PLATFORM) == CONF_ESPHOME:
+                ota_conf = ota_item
+                break
+
+        ota_helper_partition = ota_conf.get("ota_helper_partition")
+        if ota_helper_partition:
+            # Look for auto-built OTA helper binary
+            build_path = Path(CORE.relative_build_path())
+            ota_helper_bin_path = build_path / f"ota-helper-{ota_helper_partition}.bin"
+
+            if ota_helper_bin_path.exists():
+                # Parse partition table to get offset
+                partition_csv = build_path / "partitions.csv"
+                if partition_csv.exists():
+                    import csv
+                    with open(partition_csv, 'r') as f:
+                        reader = csv.DictReader(filter(lambda row: not row.startswith('#'), f))
+                        for row in reader:
+                            if row.get('Name', '').strip() == ota_helper_partition:
+                                ota_helper_offset = row.get('Offset', '').strip()
+                                ota_helper_bin = str(ota_helper_bin_path)
+                                _LOGGER.info(
+                                    "Auto-detected OTA helper partition '%s' at offset %s",
+                                    ota_helper_partition, ota_helper_offset
+                                )
+                                break
+                else:
+                    _LOGGER.warning(
+                        "OTA helper partition '%s' configured but partitions.csv not found",
+                        ota_helper_partition
+                    )
+            else:
+                _LOGGER.warning(
+                    "OTA helper partition '%s' configured but binary not found at %s",
+                    ota_helper_partition, ota_helper_bin_path
+                )
+
+    # Add OTA helper partition binary if specified or auto-detected
+    if ota_helper_bin is not None and ota_helper_offset is not None:
+        _LOGGER.info("Adding OTA helper partition: %s at %s", ota_helper_bin, ota_helper_offset)
+        flash_images.append(
+            platformio_api.FlashImage(path=Path(ota_helper_bin), offset=ota_helper_offset)
+        )
 
     mcu = "esp8266"
     if CORE.is_esp32:
@@ -633,7 +687,11 @@ def upload_program(
         exit_code = 1
         if CORE.target_platform in (PLATFORM_ESP32, PLATFORM_ESP8266):
             file = getattr(args, "file", None)
-            exit_code = upload_using_esptool(config, host, file, args.upload_speed)
+            ota_helper_bin = getattr(args, "ota_helper_bin", None)
+            ota_helper_offset = getattr(args, "ota_helper_offset", None)
+            exit_code = upload_using_esptool(
+                config, host, file, args.upload_speed, ota_helper_bin, ota_helper_offset
+            )
         elif CORE.target_platform == PLATFORM_RP2040 or CORE.is_libretiny:
             exit_code = upload_using_platformio(config, host)
         # else: Unknown target platform, exit_code remains 1
@@ -663,7 +721,24 @@ def upload_program(
     # Resolve MQTT magic strings to actual IP addresses
     network_devices = _resolve_network_devices(devices, config, args)
 
-    return espota2.run_ota(network_devices, remote_port, password, binary)
+    enable_partition_reboot = getattr(args, "partition_reboot", False)
+
+    # Check if device requires partition reboot but flag not set
+    ota_helper_partition = ota_conf.get("ota_helper_partition")
+    if ota_helper_partition and not enable_partition_reboot:
+        raise EsphomeError(
+            f"This device is configured with 'ota_helper_partition: {ota_helper_partition}' "
+            f"but was not initially flashed with dual-partition layout via serial.\n"
+            f"You MUST first flash via USB/serial with BOTH partitions:\n"
+            f"  esphome upload {config['esphome']['name']}.yaml --device /dev/ttyUSB0 \\\n"
+            f"    --ota-helper-bin ota-app.bin --ota-helper-offset 0xYOUR_OFFSET\n"
+            f"After initial serial flash, use --partition-reboot for OTA updates:\n"
+            f"  esphome upload {config['esphome']['name']}.yaml --partition-reboot"
+        )
+
+    return espota2.run_ota(
+        network_devices, remote_port, password, binary, enable_partition_reboot
+    )
 
 
 def show_logs(config: ConfigType, args: ArgsProtocol, devices: list[str]) -> int | None:
@@ -1241,6 +1316,19 @@ def parse_args(argv):
     parser_upload.add_argument(
         "--file",
         help="Manually specify the binary file to upload.",
+    )
+    parser_upload.add_argument(
+        "--partition-reboot",
+        help="Request device to reboot to OTA helper partition before firmware upload (ESP32 dual-partition OTA).",
+        action="store_true",
+    )
+    parser_upload.add_argument(
+        "--ota-helper-bin",
+        help="OTA helper partition binary file to flash during initial serial upload (ESP32 dual-partition OTA).",
+    )
+    parser_upload.add_argument(
+        "--ota-helper-offset",
+        help="Flash offset for OTA helper partition binary (e.g., 0xF10000) (ESP32 dual-partition OTA).",
     )
 
     parser_logs = subparsers.add_parser(

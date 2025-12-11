@@ -1,0 +1,44 @@
+# Minimal OTA-App Firmware Size Test for ESP32-P4
+# Purpose: Determine actual binary size for minimal OTA helper firmware
+# This configuration includes ONLY what's needed for network OTA functionality
+
+esphome:
+  name: minimal-ota-esp32p4
+  friendly_name: "Minimal OTA Helper ESP32-P4"
+
+esp32:
+  variant: esp32p4
+  board: esp32-p4-function-ev-board
+  framework:
+    type: esp-idf
+    version: 5.3.0
+  flash_size: 16MB
+
+# PSRAM required for buffering firmware
+psram:
+  mode: hex
+  speed: 200MHz
+
+# WiFi for network connectivity
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Minimal-OTA-Fallback"
+    password: "12345678"
+
+# Native API for OTA communication
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+# OTA component (standard backend for now)
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Minimal logging
+logger:
+  level: INFO
+  logs:
+    component: ERROR

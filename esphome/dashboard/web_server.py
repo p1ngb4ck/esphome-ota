@@ -460,7 +460,31 @@ class EsphomeRenameHandler(EsphomeCommandWebSocket):
 class EsphomeUploadHandler(EsphomePortCommandWebSocket):
     async def build_command(self, json_message: dict[str, Any]) -> list[str]:
         """Build the command to run."""
-        return await self.build_device_command(["upload"], json_message)
+        args = ["upload"]
+
+        # Auto-detect partition reboot from config for OTA uploads
+        config_file = settings.rel_path(json_message["configuration"])
+        device = json_message.get("device")
+
+        # If uploading via OTA (not serial), check if ota_helper_partition is configured
+        if device and not device.startswith("/dev/") and not device.startswith("COM"):
+            try:
+                import yaml
+                with open(config_file, "r") as f:
+                    config = yaml.safe_load(f)
+
+                # Check if OTA helper partition is configured
+                ota_configs = config.get("ota", [])
+                if isinstance(ota_configs, list):
+                    for ota_conf in ota_configs:
+                        if isinstance(ota_conf, dict) and "ota_helper_partition" in ota_conf:
+                            args.append("--partition-reboot")
+                            break
+            except Exception:
+                # If we can't parse config, just proceed normally
+                pass
+
+        return await self.build_device_command(args, json_message)
 
 
 class EsphomeRunHandler(EsphomePortCommandWebSocket):
