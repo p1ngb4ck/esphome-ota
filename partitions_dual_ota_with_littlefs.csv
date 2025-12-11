@@ -1,0 +1,9 @@
+# ESP-IDF Partition Table
+# Dual-partition OTA with LittleFS data partition (16MB flash)
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x9000,   0x6000,
+otadata,  data, ota,      ,         0x2000,
+phy_init, data, phy,      ,         0x1000,
+main,     app,  ota_0,    0x10000,  0xDF0000,
+ota-app,  app,  ota_1,    ,         0x100000,
+data,     data, spiffs,   ,         0x100000,
