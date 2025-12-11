@@ -37,60 +37,42 @@ def build_ota_helper(source, target, env):
     # Create OTA helper YAML configuration
     ota_helper_yaml = project_dir / f"ota-helper-{partition_name}.yaml"
 
-    # Read main config to extract necessary settings
-    main_yaml = None
-    for possible_name in [f"{env.subst('$PIOENV')}.yaml", "config.yaml"]:
-        candidate = project_dir / possible_name
-        if candidate.exists():
-            main_yaml = candidate
-            break
+    # Check if user provided custom OTA helper template
+    user_template = project_dir / "ota-helper.yaml"
+    component_template = pathlib.Path(__file__).parent / "ota_helper_template.yaml"
 
-    if not main_yaml:
-        print("Warning: Could not find main YAML config")
+    if user_template.exists():
+        # Use user's custom template
+        print(f"Using custom OTA helper template: {user_template}")
+        template_path = user_template
+    else:
+        # Use default component template
+        template_path = component_template
+
+    # Read template
+    try:
+        with open(template_path, "r") as f:
+            template_content = f.read()
+    except Exception as e:
+        print(f"Error reading OTA helper template: {e}")
         return
 
-    # Generate minimal OTA helper YAML
-    ota_helper_content = f"""# Auto-generated OTA helper configuration
-# DO NOT EDIT - this file is regenerated on each build
+    # Substitute variables
+    device_name = env.subst('$PIOENV')
+    board = env.BoardConfig().get("build.mcu", "esp32")
 
-esphome:
-  name: {env.subst('$PIOENV')}-ota-helper
-  friendly_name: "{env.subst('$PIOENV')} OTA Helper"
-
-esp32:
-  board: {env.BoardConfig().get("build.mcu", "esp32")}
-  framework:
-    type: esp-idf
-
-# Minimal components for OTA functionality
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-
-api:
-  encryption:
-    key: !secret api_encryption_key
-
-logger:
-  level: INFO
-
-ota:
-  - platform: esphome
-    password: !secret ota_password
-    mode: psram
-    target_partition: "main"
-
-# PSRAM required for buffering firmware
-psram:
-  mode: octal
-  speed: 80MHz
-"""
+    ota_helper_content = template_content.replace("${device_name}", device_name)
+    ota_helper_content = ota_helper_content.replace("${device_friendly_name}", device_name.replace("-", " ").title())
+    ota_helper_content = ota_helper_content.replace("${board}", board)
 
     # Write OTA helper YAML
     with open(ota_helper_yaml, "w") as f:
         f.write(ota_helper_content)
 
-    print(f"Created OTA helper config: {ota_helper_yaml}")
+    if user_template.exists():
+        print(f"Generated OTA helper config from custom template: {ota_helper_yaml}")
+    else:
+        print(f"Generated OTA helper config from default template: {ota_helper_yaml}")
 
     # Build the OTA helper firmware using ESPHome CLI
     python_exe = sys.executable
