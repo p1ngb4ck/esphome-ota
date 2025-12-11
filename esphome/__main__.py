@@ -872,9 +872,13 @@ def command_run(args: ArgsProtocol, config: ConfigType) -> int | None:
     # Check if we're about to do an OTA upload (not serial)
     # This allows us to skip OTA helper firmware build during OTA updates
     import os
-    if args.device and get_port_type(args.device) != PortType.SERIAL:
-        # Network/MQTT upload - skip OTA helper build (only updates main partition)
-        os.environ["ESPHOME_OTA_MODE"] = "1"
+    device = args.device
+    if device:
+        # Handle device as either string or list
+        device_to_check = device[0] if isinstance(device, list) else device
+        if get_port_type(device_to_check) != PortType.SERIAL:
+            # Network/MQTT upload - skip OTA helper build (only updates main partition)
+            os.environ["ESPHOME_OTA_MODE"] = "1"
 
     exit_code = compile_program(args, config)
     if exit_code != 0:
