@@ -19,8 +19,7 @@ def merge_factory_bin(source, target, env):
     chip = env.BoardConfig().get("build.mcu", "esp32")
 
     # Determine firmware offset by checking FLASH_EXTRA_IMAGES addresses
-    # If we find images ending around 0x11000-0x12000, firmware goes at 0x20000 (64KB aligned)
-    # Otherwise use default 0x10000
+    # If any image is at or past 0x10000, firmware must use 64KB alignment at 0x20000
     firmware_offset = "0x10000"  # Default
 
     flash_images = env.get("FLASH_EXTRA_IMAGES")
@@ -28,21 +27,17 @@ def merge_factory_bin(source, target, env):
         flat = list(itertools.chain.from_iterable(x if isinstance(x, (list, tuple)) else [x] for x in flash_images))
         entries = [env.subst(x) for x in flat]
 
-        # Find highest address before firmware
-        max_addr = 0
+        # Check if any existing image conflicts with default 0x10000 offset
         for i in range(0, len(entries) - 1, 2):
             addr = entries[i]
             try:
                 addr_int = int(addr, 16) if addr.startswith("0x") else int(addr)
-                if addr_int > max_addr:
-                    max_addr = addr_int
+                # If image at/past 0x10000, firmware needs 64KB alignment
+                if addr_int >= 0x10000:
+                    firmware_offset = "0x20000"
+                    break
             except:
                 pass
-
-        # If last component ends around 0x11000-0x12000 (phy_init), firmware needs 64KB alignment
-        if 0x11000 <= max_addr <= 0x12000:
-            firmware_offset = "0x20000"
-            print(f"Detected 64KB alignment requirement, using firmware offset: {firmware_offset}")
 
     sections = []
     flasher_args_path = build_dir / "flasher_args.json"
