@@ -85,13 +85,13 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
         # Parse and validate using csv.reader
         partition_found = False
         try:
-            with open(partitions_file, "r", encoding="utf-8") as f:
-                # Read all lines and filter out comments
-                lines = [line for line in f if not line.strip().startswith("#") and line.strip()]
-
-                # Parse using csv.reader
-                reader = csv.reader(lines)
+            with open(partitions_file, "r", encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
                 for row in reader:
+                    # Skip empty rows and comment rows
+                    if not row or not row[0].strip() or row[0].strip().startswith("#"):
+                        continue
+
                     if len(row) < 2:
                         continue
 
