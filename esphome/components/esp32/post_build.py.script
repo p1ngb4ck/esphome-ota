@@ -96,8 +96,7 @@ def merge_factory_bin(source, target, env):
                     sections.append((addr, file_path))
                 else:
                     print(f"Info: {file_path.name} not found — skipping")
-        if sections:
-            # Append main firmware to sections
+            # Append main firmware ONLY if using FLASH_EXTRA_IMAGES (not included in it)
             sections.append((firmware_offset, firmware_path))
 
     # 3. Final fallback: guess standard image locations
