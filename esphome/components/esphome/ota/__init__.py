@@ -85,7 +85,7 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
         # Parse and validate using csv.reader
         partition_found = False
         try:
-            with open(partitions_file, "r", encoding="utf-8", newline="") as f:
+            with open(str(partitions_file), "r", encoding="utf-8", newline="") as f:
                 reader = csv.reader(f)
                 for row in reader:
                     # Skip empty rows and comment rows
