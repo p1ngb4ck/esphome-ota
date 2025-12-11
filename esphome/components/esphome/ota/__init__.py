@@ -137,12 +137,13 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
 def _generate_dual_partition_table(ota_helper_partition: str, flash_size: str) -> None:
     """Generate dual-partition table optimized for flash size."""
     # Map flash sizes to partition layouts
-    # Format: (main_partition_size, ota_helper_size, nvs_size, otadata_offset)
+    # App partitions start at 0x20000 (64KB aligned after phy_init at 0x12000)
+    # Format: (main_partition_size, ota_helper_size, nvs_size)
     partition_layouts = {
-        "4MB": ("0x2F0000", "0x100000", "0x6000"),  # 3MB main, 1MB helper
-        "8MB": ("0x6F0000", "0x100000", "0x6000"),  # 7MB main, 1MB helper
-        "16MB": ("0xEF0000", "0x100000", "0x6000"),  # 15MB main, 1MB helper
-        "32MB": ("0x1EF0000", "0x100000", "0x6000"),  # 31MB main, 1MB helper
+        "4MB": ("0x2E0000", "0x100000", "0x6000"),  # 2.88MB main, 1MB helper
+        "8MB": ("0x6E0000", "0x100000", "0x6000"),  # 6.88MB main, 1MB helper
+        "16MB": ("0xEE0000", "0x100000", "0x6000"),  # 14.88MB main, 1MB helper
+        "32MB": ("0x1EE0000", "0x100000", "0x6000"),  # 30.88MB main, 1MB helper
     }
 
     if flash_size not in partition_layouts:
@@ -155,13 +156,14 @@ def _generate_dual_partition_table(ota_helper_partition: str, flash_size: str) -
     main_size, helper_size, nvs_size = partition_layouts[flash_size]
 
     # Generate partition table content
+    # No explicit offset for main - let ESP-IDF align to 64KB boundary (0x20000)
     partition_content = f"""# ESP-IDF Partition Table
 # Auto-generated for dual-partition OTA (flash_size={flash_size})
 # Name,   Type, SubType,  Offset,   Size,     Flags
 nvs,      data, nvs,      0x9000,   {nvs_size},
 otadata,  data, ota,      ,         0x2000,
 phy_init, data, phy,      ,         0x1000,
-main,     app,  ota_0,    0x10000,  {main_size},
+main,     app,  ota_0,    ,         {main_size},
 {ota_helper_partition}, app, ota_1, , {helper_size},
 """
 
