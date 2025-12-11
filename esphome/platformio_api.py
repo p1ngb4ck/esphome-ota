@@ -133,6 +133,11 @@ def run_platformio_cli(*args, **kwargs) -> str | int:
     )
     # Suppress Python syntax warnings from third-party scripts during compilation
     os.environ.setdefault("PYTHONWARNINGS", "ignore::SyntaxWarning")
+
+    # Skip OTA helper build if explicitly requested (for OTA updates)
+    if os.environ.get("ESPHOME_OTA_MODE") == "1":
+        os.environ["ESPHOME_SKIP_OTA_HELPER_BUILD"] = "1"
+
     cmd = ["platformio"] + list(args)
 
     if not CORE.verbose:

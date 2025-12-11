@@ -11,6 +11,7 @@ def build_ota_helper(source, target, env):
     """
     Build OTA helper firmware if USE_OTA_HELPER_PARTITION is defined.
     This creates a minimal firmware for the OTA helper partition.
+    Only runs during initial build for serial upload (not during OTA updates).
     """
     # Check if OTA helper partition is enabled
     if "USE_OTA_HELPER_PARTITION" not in env.get("CPPDEFINES", {}):
@@ -18,6 +19,12 @@ def build_ota_helper(source, target, env):
 
     build_dir = pathlib.Path(env.subst("$BUILD_DIR"))
     project_dir = pathlib.Path(env.subst("$PROJECT_DIR"))
+
+    # Check if we should skip OTA helper build
+    # Skip if explicitly disabled via environment variable (set by upload client for OTA)
+    if os.environ.get("ESPHOME_SKIP_OTA_HELPER_BUILD") == "1":
+        print("Skipping OTA helper build - OTA update only flashes main partition")
+        return
 
     # Get partition name from define
     partition_name = None

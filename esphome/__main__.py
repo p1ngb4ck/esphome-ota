@@ -868,6 +868,14 @@ def command_run(args: ArgsProtocol, config: ConfigType) -> int | None:
     exit_code = write_cpp(config)
     if exit_code != 0:
         return exit_code
+
+    # Check if we're about to do an OTA upload (not serial)
+    # This allows us to skip OTA helper firmware build during OTA updates
+    import os
+    if args.device and get_port_type(args.device) != PortType.SERIAL:
+        # Network/MQTT upload - skip OTA helper build (only updates main partition)
+        os.environ["ESPHOME_OTA_MODE"] = "1"
+
     exit_code = compile_program(args, config)
     if exit_code != 0:
         return exit_code
