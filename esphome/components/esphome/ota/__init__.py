@@ -84,6 +84,7 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
 
         # Parse and validate using csv.reader
         partition_found = False
+        partitions_seen = []
         try:
             with open(str(partitions_file), "r", encoding="utf-8", newline="") as f:
                 reader = csv.reader(f)
@@ -98,6 +99,7 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
                     # Extract Name and Type (first two columns)
                     partition_name = row[0].strip()
                     partition_type = row[1].strip()
+                    partitions_seen.append(partition_name)
 
                     if partition_name == ota_helper_partition:
                         partition_found = True
@@ -118,7 +120,8 @@ def _validate_ota_helper_partition(full_conf: ConfigType) -> None:
             raise cv.Invalid(
                 f"Custom partitions file '{custom_partitions_path}' does not contain "
                 f"partition named '{ota_helper_partition}'. When using '{CONF_OTA_HELPER_PARTITION}', "
-                f"your custom partition table must include this partition as an 'app' type."
+                f"your custom partition table must include this partition as an 'app' type. "
+                f"Found partitions: {', '.join(partitions_seen)}"
             )
 
         _LOGGER.info(
