@@ -541,7 +541,24 @@ def upload_using_esptool(
     else:
         idedata = platformio_api.get_idedata(config)
 
-        firmware_offset = "0x10000" if CORE.is_esp32 else "0x0"
+        # Check if dual-partition OTA is enabled (requires 64KB alignment)
+        # For dual-partition OTA, firmware starts at 0x20000 instead of 0x10000
+        # to accommodate partition table layout with alignment requirements
+        use_ota_helper = False
+        for ota_item in config.get(CONF_OTA, []):
+            if ota_item.get(CONF_PLATFORM) == CONF_ESPHOME:
+                from esphome.components.esphome.ota import CONF_OTA_HELPER_PARTITION
+                if CONF_OTA_HELPER_PARTITION in ota_item:
+                    use_ota_helper = True
+                    break
+
+        if use_ota_helper and CORE.is_esp32:
+            firmware_offset = "0x20000"
+        elif CORE.is_esp32:
+            firmware_offset = "0x10000"
+        else:
+            firmware_offset = "0x0"
+
         flash_images = [
             platformio_api.FlashImage(
                 path=idedata.firmware_bin_path, offset=firmware_offset
