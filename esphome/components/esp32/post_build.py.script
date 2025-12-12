@@ -117,6 +117,11 @@ def merge_factory_bin(source, target, env):
         print("No valid flash sections found — skipping .factory.bin creation.")
         return
 
+    # Debug: print what will be merged
+    print(f"DEBUG: Sections to merge:")
+    for addr, fpath in sections:
+        print(f"  {addr}: {fpath}")
+
     output_path = firmware_path.with_suffix(".factory.bin")
     python_exe = f'"{env.subst("$PYTHONEXE")}"'
     cmd = [
