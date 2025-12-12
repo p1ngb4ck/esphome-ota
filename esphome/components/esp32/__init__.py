@@ -1149,6 +1149,10 @@ async def to_code(config):
         # For dual-partition OTA, firmware starts at 0x20000 (64KB aligned)
         cg.add_platformio_option("board_build.app_partition_offset", "0x20000")
 
+        # Enable app rollback feature for automatic recovery from failed OTA updates
+        # If new firmware crashes/fails to boot, bootloader will automatically revert to previous partition
+        add_idf_sdkconfig_option("CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE", True)
+
     if CONF_PARTITIONS in config:
         add_extra_build_file(
             "partitions.csv", CORE.relative_config_path(config[CONF_PARTITIONS])

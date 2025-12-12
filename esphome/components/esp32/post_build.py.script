@@ -51,6 +51,7 @@ def merge_factory_bin(source, target, env):
         flash_images = env.get("FLASH_EXTRA_IMAGES")
         if flash_images:
             print("Using FLASH_EXTRA_IMAGES from PlatformIO environment")
+            print(f"FLASH_EXTRA_IMAGES raw: {flash_images}")
             # flatten any nested lists
             flat = list(
                 itertools.chain.from_iterable(
@@ -59,7 +60,10 @@ def merge_factory_bin(source, target, env):
             )
             entries = [env.subst(x) for x in flat]
 
-            # Check what's in FLASH_EXTRA_IMAGES and determine firmware offset
+            # Track if firmware.bin was already added from FLASH_EXTRA_IMAGES
+            firmware_already_added = False
+
+            # Check what's in FLASH_EXTRA_IMAGES
             for i in range(0, len(entries) - 1, 2):
                 addr, fname = entries[i], entries[i + 1]
                 if isinstance(fname, (list, tuple)):
@@ -69,33 +73,31 @@ def merge_factory_bin(source, target, env):
                     continue
                 file_path = pathlib.Path(str(fname))
 
-                # Skip firmware.bin if it's already in FLASH_EXTRA_IMAGES at wrong offset
+                # Check if this is firmware.bin
                 if file_path.name == firmware_path.name:
-                    # Firmware already in list - check its offset
+                    # Firmware is in FLASH_EXTRA_IMAGES - check its offset
                     try:
                         addr_int = int(addr, 16) if addr.startswith("0x") else int(addr)
-                        if addr_int == 0x10000:
-                            # Wrong offset - skip it, we'll add it with correct offset later
-                            firmware_offset = "0x20000"
-                            continue
+                        if addr_int == int(firmware_offset, 16):
+                            # Correct offset - add it and mark as added
+                            if file_path.exists():
+                                sections.append((addr, file_path))
+                                firmware_already_added = True
+                        else:
+                            # Wrong offset - skip it, we'll add with correct offset
+                            print(f"Info: Skipping firmware.bin at {addr} (expected {firmware_offset})")
                     except:
                         pass
-
-                # Check if any other file conflicts with 0x10000
-                try:
-                    addr_int = int(addr, 16) if addr.startswith("0x") else int(addr)
-                    if addr_int >= 0x10000:
-                        firmware_offset = "0x20000"
-                except:
-                    pass
+                    continue
 
                 if file_path.exists():
                     sections.append((addr, file_path))
                 else:
                     print(f"Info: {file_path.name} not found — skipping")
 
-            # Add firmware with correct offset
-            sections.append((firmware_offset, firmware_path))
+            # Add firmware with correct offset if not already added
+            if not firmware_already_added:
+                sections.append((firmware_offset, firmware_path))
 
     # 3. Final fallback: guess standard image locations
     if not sections:
