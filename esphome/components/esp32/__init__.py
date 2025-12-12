@@ -49,6 +49,7 @@ from .const import (  # noqa
     KEY_COMPONENTS,
     KEY_ESP32,
     KEY_EXTRA_BUILD_FILES,
+    KEY_OVERRIDE_PATH,
     KEY_PATH,
     KEY_REF,
     KEY_REPO,
@@ -252,13 +253,25 @@ def add_idf_component(
     repo: str = None,
     ref: str = None,
     path: str = None,
+    override_path: str = None,
     refresh: TimePeriod = None,
     components: list[str] | None = None,
     submodules: list[str] | None = None,
 ):
-    """Add an esp-idf component to the project."""
-    if not repo and not ref and not path:
-        raise ValueError("Requires at least one of repo, ref or path")
+    """Add an esp-idf component to the project.
+
+    Args:
+        name: Component name
+        repo: Git repository URL
+        ref: Git ref (tag/branch/commit)
+        path: Path within repository
+        override_path: Override path for built-in components (to replace ESP-IDF built-in components)
+        refresh: Deprecated
+        components: Deprecated
+        submodules: Deprecated
+    """
+    if not repo and not ref and not path and not override_path:
+        raise ValueError("Requires at least one of repo, ref, path, or override_path")
     if refresh or submodules or components:
         _LOGGER.warning(
             "The refresh, components and submodules parameters in add_idf_component() are "
@@ -280,6 +293,7 @@ def add_idf_component(
                 KEY_REPO: repo,
                 KEY_REF: ref,
                 KEY_PATH: f"{path}/{comp}" if path else comp,
+                KEY_OVERRIDE_PATH: override_path,
             }
     else:
         existing = components_registry.get(name)
@@ -294,6 +308,7 @@ def add_idf_component(
             KEY_REPO: repo,
             KEY_REF: ref,
             KEY_PATH: path,
+            KEY_OVERRIDE_PATH: override_path,
         }
 
 
@@ -1144,16 +1159,20 @@ async def to_code(config):
 
     # Determine partition table file to use
     if CONF_PARTITIONS in config:
-        # User provided custom partitions file - use absolute path
+        # User provided custom partitions file
+        # Copy it to build directory as "partitions.csv" for ESP-IDF to find
         partitions_file = CORE.relative_config_path(config[CONF_PARTITIONS])
-        cg.add_platformio_option("board_build.partitions", str(partitions_file))
+        add_extra_build_file("partitions.csv", partitions_file)
+        cg.add_platformio_option("board_build.partitions", "partitions.csv")
     else:
         # Check if OTA auto-generated partitions.csv in config directory
         auto_partitions = Path(CORE.config_dir) / "partitions.csv"
         if auto_partitions.exists():
-            cg.add_platformio_option("board_build.partitions", str(auto_partitions))
+            # Copy auto-generated file to build directory
+            add_extra_build_file("partitions.csv", auto_partitions)
+            cg.add_platformio_option("board_build.partitions", "partitions.csv")
         else:
-            # Use default partitions.csv
+            # Use default partitions.csv (will be generated in copy_files())
             cg.add_platformio_option("board_build.partitions", "partitions.csv")
 
     # Check if dual-partition OTA is configured (requires firmware at 0x20000)
@@ -1301,12 +1320,14 @@ def _write_idf_component_yml():
         dependencies = {}
         for name, component in components.items():
             dependency = {}
-            if component[KEY_REF]:
+            if component.get(KEY_REF):
                 dependency["version"] = component[KEY_REF]
-            if component[KEY_REPO]:
+            if component.get(KEY_REPO):
                 dependency["git"] = component[KEY_REPO]
-            if component[KEY_PATH]:
+            if component.get(KEY_PATH):
                 dependency["path"] = component[KEY_PATH]
+            if component.get(KEY_OVERRIDE_PATH):
+                dependency["override_path"] = component[KEY_OVERRIDE_PATH]
             dependencies[name] = dependency
         contents = yaml_util.dump({"dependencies": dependencies})
     else:
@@ -1350,20 +1371,11 @@ def copy_files():
     for file in CORE.data[KEY_ESP32][KEY_EXTRA_BUILD_FILES].values():
         name: str = file[KEY_NAME]
         path: Path = file[KEY_PATH]
-        dest_path = CORE.relative_build_path(name)
-        _LOGGER.info(f"Copying extra build file: {name}")
-        _LOGGER.info(f"  Source: {path}")
-        _LOGGER.info(f"  Destination: {dest_path}")
         if str(path).startswith("http"):
             import requests
 
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            CORE.relative_build_path(name).parent.mkdir(parents=True, exist_ok=True)
             content = requests.get(path, timeout=30).content
-            dest_path.write_bytes(content)
-            _LOGGER.info(f"  Downloaded and wrote {len(content)} bytes")
+            CORE.relative_build_path(name).write_bytes(content)
         else:
-            if not path.exists():
-                _LOGGER.error(f"  Source file does not exist: {path}")
-            else:
-                copy_file_if_changed(path, dest_path)
-                _LOGGER.info(f"  Copied successfully")
+            copy_file_if_changed(path, CORE.relative_build_path(name))
