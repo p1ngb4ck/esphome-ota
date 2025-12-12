@@ -118,9 +118,11 @@ def merge_factory_bin(source, target, env):
         return
 
     # Debug: print what will be merged
-    print(f"DEBUG: Sections to merge:")
+    print("=" * 80)
+    print("DEBUG: Sections to merge (count=%d):" % len(sections))
     for addr, fpath in sections:
-        print(f"  {addr}: {fpath}")
+        print("  %s: %s" % (addr, fpath))
+    print("=" * 80)
 
     output_path = firmware_path.with_suffix(".factory.bin")
     python_exe = f'"{env.subst("$PYTHONEXE")}"'
