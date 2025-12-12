@@ -559,11 +559,18 @@ def upload_using_esptool(
         else:
             firmware_offset = "0x0"
 
+        # Filter out firmware.bin from extra_flash_images to avoid duplicates
+        # (PlatformIO might include it at wrong offset 0x10000)
+        extra_images = [
+            img for img in idedata.extra_flash_images
+            if img.path != idedata.firmware_bin_path
+        ]
+
         flash_images = [
             platformio_api.FlashImage(
                 path=idedata.firmware_bin_path, offset=firmware_offset
             ),
-            *idedata.extra_flash_images,
+            *extra_images,
         ]
 
     # Auto-detect OTA helper partition binary if not manually specified

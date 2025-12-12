@@ -1135,6 +1135,20 @@ async def to_code(config):
         )
 
     cg.add_platformio_option("board_build.partitions", "partitions.csv")
+
+    # Check if dual-partition OTA is configured (requires firmware at 0x20000)
+    use_ota_helper = False
+    for ota_item in fv.full_config.get().get(CONF_OTA, []):
+        if ota_item.get(CONF_PLATFORM) == CONF_ESPHOME:
+            from esphome.components.esphome.ota import CONF_OTA_HELPER_PARTITION
+            if CONF_OTA_HELPER_PARTITION in ota_item:
+                use_ota_helper = True
+                break
+
+    if use_ota_helper and conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
+        # For dual-partition OTA, firmware starts at 0x20000 (64KB aligned)
+        cg.add_platformio_option("board_build.app_partition_offset", "0x20000")
+
     if CONF_PARTITIONS in config:
         add_extra_build_file(
             "partitions.csv", CORE.relative_config_path(config[CONF_PARTITIONS])
