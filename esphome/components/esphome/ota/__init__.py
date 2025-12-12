@@ -156,14 +156,15 @@ def _generate_dual_partition_table(ota_helper_partition: str, flash_size: str) -
     main_size, helper_size, nvs_size = partition_layouts[flash_size]
 
     # Generate partition table content
-    # No explicit offset for main - let ESP-IDF align to 64KB boundary (0x20000)
+    # Explicit offset 0x20000 for main partition (64KB aligned)
+    # ESP-IDF may default to 0x10000 if offset is empty, causing flash conflicts
     partition_content = f"""# ESP-IDF Partition Table
 # Auto-generated for dual-partition OTA (flash_size={flash_size})
 # Name,   Type, SubType,  Offset,   Size,     Flags
 nvs,      data, nvs,      0x9000,   {nvs_size},
 otadata,  data, ota,      ,         0x2000,
 phy_init, data, phy,      ,         0x1000,
-main,     app,  ota_0,    ,         {main_size},
+main,     app,  ota_0,    0x20000,  {main_size},
 {ota_helper_partition}, app, ota_1, , {helper_size},
 """
 
