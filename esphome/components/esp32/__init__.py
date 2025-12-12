@@ -943,6 +943,14 @@ async def to_code(config):
         Path(__file__).parent / "pre_build.py.script",
     )
 
+    # Fix firmware flash offset for dual-partition OTA (must run BEFORE build)
+    # PlatformIO ESP-IDF hardcodes app offset to 0x10000, this script fixes it to 0x20000
+    add_extra_script(
+        "pre",
+        "fix_flash_offset.py",
+        Path(__file__).parent / "fix_flash_offset.py.script",
+    )
+
     add_extra_script(
         "post",
         "post_build.py",
