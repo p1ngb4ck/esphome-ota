@@ -1146,12 +1146,13 @@ async def to_code(config):
                 break
 
     if use_ota_helper and conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
-        # For dual-partition OTA, firmware starts at 0x20000 (64KB aligned)
-        cg.add_platformio_option("board_build.app_partition_offset", "0x20000")
-
         # Enable app rollback feature for automatic recovery from failed OTA updates
         # If new firmware crashes/fails to boot, bootloader will automatically revert to previous partition
         add_idf_sdkconfig_option("CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE", True)
+
+        # Override app offset for ESP-IDF flash - forces firmware to be flashed at partition table offset
+        # ESP-IDF defaults to 0x10000 but dual-partition layout requires 0x20000
+        cg.add_platformio_option("board_upload.offset_address", "0x20000")
 
     if CONF_PARTITIONS in config:
         add_extra_build_file(

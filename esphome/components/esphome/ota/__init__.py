@@ -139,11 +139,12 @@ def _generate_dual_partition_table(ota_helper_partition: str, flash_size: str) -
     # Map flash sizes to partition layouts
     # App partitions start at 0x20000 (64KB aligned after phy_init at 0x12000)
     # Format: (main_partition_size, ota_helper_size, nvs_size)
+    # Calculation: total - 0x20000 (offset to main) - helper_size = main_size
     partition_layouts = {
-        "4MB": ("0x2E0000", "0x100000", "0x6000"),  # 2.88MB main, 1MB helper
-        "8MB": ("0x6E0000", "0x100000", "0x6000"),  # 6.88MB main, 1MB helper
-        "16MB": ("0xEE0000", "0x100000", "0x6000"),  # 14.88MB main, 1MB helper
-        "32MB": ("0x1EE0000", "0x100000", "0x6000"),  # 30.88MB main, 1MB helper
+        "4MB": ("0x2E0000", "0x100000", "0x6000"),  # 4MB - 0x20000 - 1MB = ~2.88MB main
+        "8MB": ("0x6E0000", "0x100000", "0x6000"),  # 8MB - 0x20000 - 1MB = ~6.88MB main
+        "16MB": ("0xDE0000", "0x100000", "0x6000"),  # 16MB - 0x20000 - 1MB = ~13.75MB main
+        "32MB": ("0x1DE0000", "0x100000", "0x6000"),  # 32MB - 0x20000 - 1MB = ~29.75MB main
     }
 
     if flash_size not in partition_layouts:
