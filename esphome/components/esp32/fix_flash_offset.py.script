@@ -1,65 +1,82 @@
 Import("env")
 
+import itertools
+
 # Fix firmware flash offset for dual-partition OTA
 # PlatformIO ESP-IDF hardcodes app offset to 0x10000, but dual-partition layout needs 0x20000
 
+print("=== FIX_FLASH_OFFSET SCRIPT LOADED ===")
 
-def fix_flash_offset_for_dual_ota(*args, **kwargs):
-    """Override FLASH_EXTRA_IMAGES to fix firmware offset from 0x10000 to 0x20000."""
-    # Only apply for dual-partition OTA configurations
-    if "USE_OTA_HELPER_PARTITION" not in env.get("CPPDEFINES", {}):
-        return
+# Check if this is a dual-partition OTA build
+cppdefines = env.get("CPPDEFINES", {})
+print(f"CPPDEFINES type: {type(cppdefines)}")
+print(f"CPPDEFINES: {cppdefines}")
 
-    print("Fixing firmware flash offset for dual-partition OTA (0x10000 -> 0x20000)")
-
-    # Get current FLASH_EXTRA_IMAGES set by PlatformIO
-    flash_images = env.get("FLASH_EXTRA_IMAGES")
-    if not flash_images:
-        return
-
-    # Flatten nested lists
-    import itertools
-
-    flat = list(
-        itertools.chain.from_iterable(
-            x if isinstance(x, (list, tuple)) else [x] for x in flash_images
-        )
+# CPPDEFINES can be a list or dict - check both
+use_ota_helper = False
+if isinstance(cppdefines, dict):
+    use_ota_helper = "USE_OTA_HELPER_PARTITION" in cppdefines
+elif isinstance(cppdefines, list):
+    use_ota_helper = any(
+        "USE_OTA_HELPER_PARTITION" in str(item) for item in cppdefines
     )
 
-    # Process and fix offsets
-    new_images = []
-    i = 0
-    while i < len(flat):
-        if i + 1 < len(flat):
-            offset = env.subst(flat[i])
-            file_path = env.subst(flat[i + 1])
+print(f"Use OTA helper: {use_ota_helper}")
 
-            # Check if this is firmware.bin at wrong offset
-            if "firmware.bin" in str(file_path):
-                # Convert offset to int for comparison
-                try:
-                    offset_int = (
-                        int(offset, 16) if offset.startswith("0x") else int(offset)
-                    )
-                    if offset_int == 0x10000:
-                        print(
-                            f"  Changing firmware.bin offset from {offset} to 0x20000"
+if not use_ota_helper:
+    print("Not a dual-partition OTA build, skipping offset fix")
+else:
+    print("Dual-partition OTA detected - will fix firmware offset")
+
+    # Get current FLASH_EXTRA_IMAGES
+    flash_images = env.get("FLASH_EXTRA_IMAGES")
+    print(f"Initial FLASH_EXTRA_IMAGES: {flash_images}")
+
+    if flash_images:
+        # Flatten nested lists
+        flat = list(
+            itertools.chain.from_iterable(
+                x if isinstance(x, (list, tuple)) else [x] for x in flash_images
+            )
+        )
+
+        # Process and fix offsets
+        new_images = []
+        i = 0
+        while i < len(flat):
+            if i + 1 < len(flat):
+                offset = env.subst(flat[i])
+                file_path = env.subst(flat[i + 1])
+
+                # Check if this is firmware.bin at wrong offset
+                if "firmware.bin" in str(file_path):
+                    # Convert offset to int for comparison
+                    try:
+                        offset_int = (
+                            int(offset, 16)
+                            if offset.startswith("0x")
+                            else int(offset)
                         )
-                        new_images.extend(["0x20000", file_path])
-                        i += 2
-                        continue
-                except ValueError:
-                    pass
+                        if offset_int == 0x10000:
+                            print(
+                                f">>> Changing firmware.bin offset from {offset} to 0x20000"
+                            )
+                            new_images.extend(["0x20000", file_path])
+                            i += 2
+                            continue
+                    except ValueError:
+                        pass
 
-            new_images.extend([offset, file_path])
-            i += 2
-        else:
-            i += 1
+                new_images.extend([offset, file_path])
+                i += 2
+            else:
+                i += 1
 
-    # Replace FLASH_EXTRA_IMAGES with corrected version
-    env.Replace(FLASH_EXTRA_IMAGES=new_images)
-    print(f"Updated FLASH_EXTRA_IMAGES with corrected firmware offset")
+        # Replace FLASH_EXTRA_IMAGES with corrected version
+        env.Replace(FLASH_EXTRA_IMAGES=new_images)
+        print(f"Updated FLASH_EXTRA_IMAGES: {new_images}")
+    else:
+        print("FLASH_EXTRA_IMAGES is empty or not set")
 
+print("=== FIX_FLASH_OFFSET SCRIPT COMPLETE ===")
 
-# Run before build to fix FLASH_EXTRA_IMAGES
-env.AddPreAction("$BUILD_DIR/${PROGNAME}.bin", fix_flash_offset_for_dual_ota)
