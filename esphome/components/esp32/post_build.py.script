@@ -19,7 +19,12 @@ def merge_factory_bin(source, target, env):
     chip = env.BoardConfig().get("build.mcu", "esp32")
 
     sections = []
-    firmware_offset = "0x10000"  # Default
+    # For dual-partition OTA, firmware is always at 0x20000 (64KB aligned)
+    # Otherwise use default 0x10000
+    if "USE_OTA_HELPER_PARTITION" in env.get("CPPDEFINES", {}):
+        firmware_offset = "0x20000"
+    else:
+        firmware_offset = "0x10000"
     flasher_args_path = build_dir / "flasher_args.json"
 
     # 1. Try flasher_args.json
