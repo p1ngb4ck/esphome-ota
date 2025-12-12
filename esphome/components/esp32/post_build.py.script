@@ -19,12 +19,28 @@ def merge_factory_bin(source, target, env):
     chip = env.BoardConfig().get("build.mcu", "esp32")
 
     sections = []
-    # For dual-partition OTA, firmware is always at 0x20000 (64KB aligned)
-    # Otherwise use default 0x10000
-    if "USE_OTA_HELPER_PARTITION" in env.get("CPPDEFINES", {}):
-        firmware_offset = "0x20000"
-    else:
-        firmware_offset = "0x10000"
+
+    # Detect firmware offset by reading partition table
+    # For dual-partition OTA, firmware is at 0x20000; otherwise 0x10000
+    firmware_offset = "0x10000"  # default
+    partitions_csv = env.subst("$PROJECT_DIR") + "/partitions.csv"
+    if os.path.exists(partitions_csv):
+        with open(partitions_csv, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#") or not line:
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 4 and parts[2] == "ota_0" and parts[3]:
+                    try:
+                        offset_int = int(parts[3], 16) if parts[3].startswith("0x") else int(parts[3])
+                        if offset_int == 0x20000:
+                            firmware_offset = "0x20000"
+                            print("Detected dual-partition OTA layout from partitions.csv")
+                    except ValueError:
+                        pass
+                    break
+
     flasher_args_path = build_dir / "flasher_args.json"
 
     # 1. Try flasher_args.json
