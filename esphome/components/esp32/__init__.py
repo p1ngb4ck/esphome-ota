@@ -1164,6 +1164,7 @@ async def to_code(config):
         # User provided custom partitions file
         # Copy it to build directory as "partitions.csv" for ESP-IDF to find
         partitions_file = CORE.relative_config_path(config[CONF_PARTITIONS])
+        _LOGGER.info(f"Using custom partition file: {partitions_file}")
         add_extra_build_file("partitions.csv", partitions_file)
         cg.add_platformio_option("board_build.partitions", "partitions.csv")
     else:
