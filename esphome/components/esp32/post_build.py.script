@@ -31,6 +31,9 @@ def merge_factory_bin(source, target, env):
                 flash_data["flash_files"].items(), key=lambda kv: int(kv[0], 16)
             ):
                 file_path = pathlib.Path(fname)
+                # Try absolute path first, then relative to build dir
+                if not file_path.is_absolute():
+                    file_path = build_dir / file_path
                 if file_path.exists():
                     sections.append((addr, str(file_path)))
                 else:
