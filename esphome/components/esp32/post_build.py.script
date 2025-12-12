@@ -141,6 +141,15 @@ def merge_factory_bin(source, target, env):
     for addr, file_path in sections:
         cmd += [addr, str(file_path)]
 
+    # Debug: Print what will actually be passed to esptool
+    print("=" * 80)
+    print("DEBUG: Sections being merged:")
+    for addr, file_path in sections:
+        print(f"  {addr}: {file_path}")
+    print("\nDEBUG: Full esptool command:")
+    print(" ".join(cmd))
+    print("=" * 80)
+
     print(f"Merging binaries into {output_path}")
     result = env.Execute(
         env.VerboseAction(" ".join(cmd), "Merging binaries with esptool")
