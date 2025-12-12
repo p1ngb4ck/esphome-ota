@@ -1142,7 +1142,19 @@ async def to_code(config):
             "CONFIG_VFS_SUPPORT_DIR", not advanced[CONF_DISABLE_VFS_SUPPORT_DIR]
         )
 
-    cg.add_platformio_option("board_build.partitions", "partitions.csv")
+    # Determine partition table file to use
+    if CONF_PARTITIONS in config:
+        # User provided custom partitions file - use absolute path
+        partitions_file = CORE.relative_config_path(config[CONF_PARTITIONS])
+        cg.add_platformio_option("board_build.partitions", str(partitions_file))
+    else:
+        # Check if OTA auto-generated partitions.csv in config directory
+        auto_partitions = Path(CORE.config_dir) / "partitions.csv"
+        if auto_partitions.exists():
+            cg.add_platformio_option("board_build.partitions", str(auto_partitions))
+        else:
+            # Use default partitions.csv
+            cg.add_platformio_option("board_build.partitions", "partitions.csv")
 
     # Check if dual-partition OTA is configured (requires firmware at 0x20000)
     use_ota_helper = False
@@ -1157,20 +1169,6 @@ async def to_code(config):
         # Enable app rollback feature for automatic recovery from failed OTA updates
         # If new firmware crashes/fails to boot, bootloader will automatically revert to previous partition
         add_idf_sdkconfig_option("CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE", True)
-
-        # Override app offset for ESP-IDF flash - forces firmware to be flashed at partition table offset
-        # ESP-IDF defaults to 0x10000 but dual-partition layout requires 0x20000
-        cg.add_platformio_option("board_upload.offset_address", "0x20000")
-
-    if CONF_PARTITIONS in config:
-        add_extra_build_file(
-            "partitions.csv", CORE.relative_config_path(config[CONF_PARTITIONS])
-        )
-    else:
-        # Check if OTA auto-generated partitions.csv in config directory
-        auto_partitions = Path(CORE.config_dir) / "partitions.csv"
-        if auto_partitions.exists():
-            add_extra_build_file("partitions.csv", auto_partitions)
 
     if assertion_level := advanced.get(CONF_ASSERTION_LEVEL):
         for key, flag in ASSERTION_LEVELS.items():
@@ -1352,11 +1350,20 @@ def copy_files():
     for file in CORE.data[KEY_ESP32][KEY_EXTRA_BUILD_FILES].values():
         name: str = file[KEY_NAME]
         path: Path = file[KEY_PATH]
+        dest_path = CORE.relative_build_path(name)
+        _LOGGER.info(f"Copying extra build file: {name}")
+        _LOGGER.info(f"  Source: {path}")
+        _LOGGER.info(f"  Destination: {dest_path}")
         if str(path).startswith("http"):
             import requests
 
-            CORE.relative_build_path(name).parent.mkdir(parents=True, exist_ok=True)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
             content = requests.get(path, timeout=30).content
-            CORE.relative_build_path(name).write_bytes(content)
+            dest_path.write_bytes(content)
+            _LOGGER.info(f"  Downloaded and wrote {len(content)} bytes")
         else:
-            copy_file_if_changed(path, CORE.relative_build_path(name))
+            if not path.exists():
+                _LOGGER.error(f"  Source file does not exist: {path}")
+            else:
+                copy_file_if_changed(path, dest_path)
+                _LOGGER.info(f"  Copied successfully")
