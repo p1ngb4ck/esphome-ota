@@ -18,7 +18,9 @@ from esphome.const import (
     CONF_IGNORE_EFUSE_MAC_CRC,
     CONF_LOG_LEVEL,
     CONF_NAME,
+    CONF_OTA,
     CONF_PATH,
+    CONF_PLATFORM,
     CONF_PLATFORM_VERSION,
     CONF_PLATFORMIO_OPTIONS,
     CONF_REF,
@@ -1177,12 +1179,13 @@ async def to_code(config):
 
     # Check if dual-partition OTA is configured (requires firmware at 0x20000)
     use_ota_helper = False
-    for ota_item in fv.full_config.get().get(CONF_OTA, []):
-        if ota_item.get(CONF_PLATFORM) == CONF_ESPHOME:
-            from esphome.components.esphome.ota import CONF_OTA_HELPER_PARTITION
-            if CONF_OTA_HELPER_PARTITION in ota_item:
-                use_ota_helper = True
-                break
+    if CONF_OTA in CORE.config:
+        for ota_item in CORE.config[CONF_OTA]:
+            if ota_item.get(CONF_PLATFORM) == CONF_ESPHOME:
+                from esphome.components.esphome.ota import CONF_OTA_HELPER_PARTITION
+                if CONF_OTA_HELPER_PARTITION in ota_item:
+                    use_ota_helper = True
+                    break
 
     if use_ota_helper and conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
         # Enable app rollback feature for automatic recovery from failed OTA updates
